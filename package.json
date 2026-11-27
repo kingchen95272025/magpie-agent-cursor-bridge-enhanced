@@ -1,6 +1,6 @@
 {
   "name": "magpie-agent-cursor-bridge",
-  "version": "0.2.39",
+  "version": "0.2.40",
   "type": "module",
   "description": "No Cursor subscription needed — Magpie models inside Cursor",
   "license": "MIT",

@@ -93,7 +93,7 @@ function harness(options={}) {
 test('a valid connection starts the engine and publishes the proxy',async()=>{
   const h=harness({maxTicks:1});
   await h.supervisor.run();
-  assert.deepEqual(h.state.spawns,[{mode:'default',subagentMode:'async',preferredProxyPort:''}]);
+  assert.deepEqual(h.state.spawns,[{mode:'default',subagentMode:'async',showOfficialModels:false,preferredProxyPort:''}]);
   const connected=h.state.publishes.find(entry=>entry.state==='connected');
   assert.ok(connected);
   assert.equal(connected.mode,'default');
@@ -148,6 +148,19 @@ test('a run-mode change restarts the engine once and carries the proxy port',asy
   assert.deepEqual(h.state.spawns.map(entry=>[entry.mode,entry.preferredProxyPort]),[['default','5555'],['lite','58160']]);
   assert.equal(h.state.children[0].kills.length,1,'the old engine stops before the new one starts');
   assert.equal(h.state.effective.length,2);
+});
+
+test('an official-models toggle restarts the engine once',async()=>{
+  let calls=0;
+  const h=harness({
+    isEnding:(state)=>state.spawns.length>=2,
+    configure:()=>({...BASE_SETTINGS,showOfficialModels:calls++===0?false:true})
+  });
+  await h.supervisor.run();
+  assert.deepEqual(h.state.spawns.map(entry=>entry.showOfficialModels),[false,true]);
+  assert.equal(h.state.children[0].kills.length,1,'the old engine stops before the new one starts');
+  const connected=h.state.publishes.filter(entry=>entry.state==='connected').at(-1);
+  assert.equal(connected.engineOfficialModels,true);
 });
 
 test('a display-name change hot-swaps the catalogue without restarting',async()=>{

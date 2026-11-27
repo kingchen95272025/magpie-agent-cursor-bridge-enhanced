@@ -17,11 +17,15 @@ chmod 755 "$bridge_package/bin/cursor-magpie-bridge.new"
 mv "$bridge_package/bin/cursor-magpie-bridge.new" "$bridge_package/bin/cursor-magpie-bridge"
 python3 - "$bridge_package" <<'PY'
 import hashlib,json,pathlib,subprocess,sys
-p=pathlib.Path(sys.argv[1]);v=json.loads((p/'package.json').read_text())['version'];b=p/'bin/cursor-magpie-bridge'
-assert subprocess.check_output([str(b),'--version'],text=True).strip()==v
-digest=hashlib.sha256(b.read_bytes()).hexdigest()
+p=pathlib.Path(sys.argv[1]);b=p/'bin/cursor-magpie-bridge'
+# The engine is rebuilt only when its sources change, so the package version
+# and the engine version can legitimately differ; engineVersion pins the
+# binary's own --version output.
 data=json.loads((p/'integrity.json').read_text()) if (p/'integrity.json').exists() else {}
-data['version']=v
+engine_version=data.get('engineVersion') or json.loads((p/'package.json').read_text())['version']
+assert subprocess.check_output([str(b),'--version'],text=True).strip()==engine_version, f'expected engine {engine_version}'
+digest=hashlib.sha256(b.read_bytes()).hexdigest()
+data['version']=json.loads((p/'package.json').read_text())['version']
 data['engine']=digest
 data.setdefault('platforms',{})['darwin-arm64']=digest
 (p/'integrity.json').write_text(json.dumps(data,indent=2)+'\n')

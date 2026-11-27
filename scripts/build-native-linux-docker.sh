@@ -43,5 +43,5 @@ for arch in $arches; do
     -e CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" \
     "${cross_env[@]}" "${target_env[@]}" \
     -w /work "$image" \
-    bash -c "export PATH=/usr/local/cargo/bin:\$PATH; apt-get update && apt-get install -y --no-install-recommends $packages && bash scripts/build-native-linux.sh"
+    bash -c "export PATH=/usr/local/cargo/bin:\$PATH; sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; apt-get -o Acquire::http::Pipeline-Depth=0 -o Acquire::Retries=3 update && apt-get -o Acquire::http::Pipeline-Depth=0 -o Acquire::Retries=3 install -y --no-install-recommends $packages && bash scripts/build-native-linux.sh"
 done

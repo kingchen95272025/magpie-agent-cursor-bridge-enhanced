@@ -28,11 +28,14 @@ chmod 755 "$bridge_package/bin/win32-x64/cursor-magpie-bridge.exe.new"
 mv "$bridge_package/bin/win32-x64/cursor-magpie-bridge.exe.new" "$bridge_package/bin/win32-x64/cursor-magpie-bridge.exe"
 python3 - "$bridge_package" <<'PY'
 import hashlib,json,pathlib,subprocess,sys
-p=pathlib.Path(sys.argv[1]);v=json.loads((p/'package.json').read_text())['version'];b=p/'bin/win32-x64/cursor-magpie-bridge.exe'
-strings=subprocess.check_output(['strings',str(b)],text=True)
-assert v in strings.splitlines(), 'version string missing from the PE'
+p=pathlib.Path(sys.argv[1]);b=p/'bin/win32-x64/cursor-magpie-bridge.exe'
+# engineVersion pins the binary's own version string; the package version may
+# legitimately differ when only the JavaScript layer changes.
 data=json.loads((p/'integrity.json').read_text()) if (p/'integrity.json').exists() else {}
-data['version']=v
+engine_version=data.get('engineVersion') or json.loads((p/'package.json').read_text())['version']
+strings=subprocess.check_output(['strings',str(b)],text=True)
+assert engine_version in strings.splitlines(), f'engine version {engine_version} missing from the PE'
+data['version']=json.loads((p/'package.json').read_text())['version']
 data.setdefault('platforms',{})['win32-x64']=hashlib.sha256(b.read_bytes()).hexdigest()
 (p/'integrity.json').write_text(json.dumps(data,indent=2)+'\n')
 PY

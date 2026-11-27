@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.40（Cursor 官方模型与 Magpie 模型共存）
+
+- 新增控制台开关「显示 Cursor 官方模型」（`bridge-settings.json` 的 `showOfficialModels`，默认关闭）。开启后 `AvailableModels` / `GetUsableModels` 先透传 Cursor 官方目录，再追加 Magpie 目录：官方模型无角标、按 Cursor 订阅计费；Magpie 模型保留 `MAGPIE` 角标、继续走本地引擎；Cursor 自带的 Auto 随官方目录恢复。关闭时保持原行为——只发布桥接目录、写入 `display_configuration` 隐藏 Auto，并且不请求官方目录。
+- 合并失败时安全降级：Cursor 未登录（401）、离线、非 2xx 或无法解析的压缩帧，都会回退到本地目录并记录 `engine.log`，模型菜单不会变成空白，也不会向 Cursor 返回 500。
+- 路由不需要新增逻辑：官方模型的 `model_hash` 不在本地模型表中，桥接按既有规则 `mark_upstream` 后原样转发 Cursor 官方；Magpie 模型仍由本地 Agent 引擎处理。
+- 控制台状态卡片新增「模型目录」（仅 Magpie / 官方 + Magpie），保存开关后会重启引擎并提示当前对话可能中断一次；顺带修复 `runtime.mode` / `runtime.engineMode` 未透传到控制台、导致「切换中」状态不显示的问题。
+- 原生引擎 `engineVersion` 升至 0.2.16（启动开关 `CURSOR_BRIDGE_OFFICIAL_MODELS`、合并回退保护）；插件版本升至 0.2.40。`build-native.sh` 与 `build-native-windows.sh` 的版本校验改为读取 `engineVersion`，与「插件版本与引擎版本可不同」的既有约定一致。
+- 验证范围：Rust `model_catalog` 9 项单测通过（含合并与回退），JS 全量 151 项通过；真机验证了开关可逆、关闭时零上游请求、未登录 401 时正确回退本地目录。官方目录返回 200 时的混排、选择官方模型对话与 Auto 可见性依赖已登录的 Cursor 账号，未纳入本次自动化验证；从关闭切到开启后若 Auto 未恢复，重启一次 Cursor 可清除客户端缓存的隐藏状态。
+
 ## 0.2.39（修复 Cursor 关闭后无法读取存储）
 
 - 修复「Cursor 完全退出后，Cursor 存储面板读取失败」：报错为 `in prepare, unable to open database file (14)`（`SQLITE_CANTOPEN`）。根因是 Cursor 干净退出时会删除 `state.vscdb-wal` / `state.vscdb-shm`，而 SQLite 的只读连接（`-readonly` / `bun:sqlite` 的 `readonly`）无权创建共享内存文件，第一条语句即失败。此前这形成一个死循环——Cursor 关闭时读不到会话列表、无法选择要删除的内容；Cursor 运行时能读，但删除被进程检测拒绝。

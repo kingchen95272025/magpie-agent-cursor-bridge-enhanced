@@ -284,6 +284,9 @@
     const engineMode = runtime?.engineMode || null;
     const switching = engineMode && engineMode !== configuredMode;
     const engineModeText = MODES[engineMode || configuredMode] || configuredMode;
+    // null means no engine is running yet; the flag is only known once it starts.
+    const engineOfficialModels = runtime?.engineOfficialModels ?? null;
+    const officialModelsText = engineOfficialModels === null ? '—' : (engineOfficialModels ? '官方 + Magpie' : '仅 Magpie');
     const databaseText = engineMode === 'lite'
       ? '内存 · 不落盘'
       : (overview.database ? `${bytes(overview.database.size)} · bridge.db` : '未创建');
@@ -303,6 +306,7 @@
       item('版本', overview.version || overview.installation?.version || '—', {mono: true}),
       item('Cursor', cursorText, {tone: cursor?.version && !cursor.tested ? 'warn' : '', title: cursor?.hint || ''}),
       item('运行模式', `${engineModeText}${switching ? ' · 切换中' : ''}`, {tone: switching ? 'warn' : ''}),
+      item('模型目录', officialModelsText, {tone: engineOfficialModels ? 'ok' : ''}),
       item('数据库', databaseText, {tone: engineMode === 'lite' ? 'ok' : ''}),
       item('自动清理', retentionText, {tone: retention?.error ? 'warn' : ''}),
       item('后台监视器', overview.supervisor.alive
@@ -346,6 +350,7 @@
     if (values?.runMode !== undefined) $('runMode').value = values.runMode;
     if (values?.subagentMode !== undefined) $('subagentMode').value = values.subagentMode;
     if (values?.orcaTakeover !== undefined) $('orcaTakeover').value = values.orcaTakeover;
+    if (values?.showOfficialModels !== undefined) $('showOfficialModels').value = values.showOfficialModels ? 'on' : 'off';
     for (const key of ['refreshSeconds', 'gatewayGraceSeconds', 'logLimitMB', 'tracesRetentionDays', 'sessionsRetentionDays']) {
       if (values?.[key] !== undefined) $(key).value = values[key];
     }
@@ -358,7 +363,7 @@
     const card = $('settingsCard');
     const state = $('settingsState');
     if (!mode || !card || !state) return;
-    const label = MODES[mode] || mode;
+    const label = `${MODES[mode] || mode}${lastOverview?.settings?.values?.showOfficialModels ? ' · 含官方模型' : ''}`;
     const text = card.open ? label : `${label} · 展开编辑`;
     if (state.textContent !== text) state.textContent = text;
   }
@@ -566,12 +571,14 @@
     event.preventDefault();
     const beforeMode = lastOverview?.settings?.values?.runMode;
     const beforeSubagentMode = lastOverview?.settings?.values?.subagentMode;
+    const beforeOfficialModels = lastOverview?.settings?.values?.showOfficialModels;
     const beforeTraces = lastOverview?.settings?.values?.tracesRetentionDays;
     const beforeSessions = lastOverview?.settings?.values?.sessionsRetentionDays;
     const body = {
       runMode: $('runMode').value,
       subagentMode: $('subagentMode').value,
       orcaTakeover: $('orcaTakeover').value,
+      showOfficialModels: $('showOfficialModels').value === 'on',
       refreshSeconds: Number($('refreshSeconds').value),
       gatewayGraceSeconds: Number($('gatewayGraceSeconds').value),
       logLimitMB: Number($('logLimitMB').value),
@@ -593,6 +600,11 @@
       const subagentHint = beforeSubagentMode && beforeSubagentMode !== result.settings.subagentMode
         ? '子代理模式已变更，引擎将在数秒内自动重启，下一次 Task 调用生效；'
         : '';
+      const officialModelsHint = beforeOfficialModels !== undefined && beforeOfficialModels !== result.settings.showOfficialModels
+        ? (result.settings.showOfficialModels
+          ? '已开启 Cursor 官方模型，引擎重启后模型列表将合并官方目录，Auto 也会恢复；'
+          : '已关闭 Cursor 官方模型，引擎重启后模型列表只保留 Magpie 模型；')
+        : '';
       const retentionHint = beforeTraces !== result.settings.tracesRetentionDays || beforeSessions !== result.settings.sessionsRetentionDays
         ? '保留策略已更新，下一轮后台清理生效；'
         : '';
@@ -609,7 +621,7 @@
                 : (result.orca?.changed
                   ? `Orca 配置已${result.settings.orcaTakeover === 'on' ? '写入' : '移除'}；`
                   : '')))));
-      $('settingsHint').textContent = `已保存：${modeHint}${subagentHint}${retentionHint}${orcaHint}同步间隔与容错下一轮生效，日志上限下次后台启动生效`;
+      $('settingsHint').textContent = `已保存：${modeHint}${subagentHint}${officialModelsHint}${retentionHint}${orcaHint}同步间隔与容错下一轮生效，日志上限下次后台启动生效`;
       loadStatus({quiet: true});
       loadAgentCli({force: true});
     } catch (error) {
@@ -2295,7 +2307,7 @@
       if (button) saveModelRow(button.dataset.saveModel);
     });
     $('resetSettings').addEventListener('click', () => {
-      const defaults = lastOverview?.settings?.defaults || {runMode: 'default', subagentMode: 'async', orcaTakeover: 'on', refreshSeconds: 15, gatewayGraceSeconds: 60, logLimitMB: 4, tracesRetentionDays: 7, sessionsRetentionDays: 0};
+      const defaults = lastOverview?.settings?.defaults || {runMode: 'default', subagentMode: 'async', orcaTakeover: 'on', showOfficialModels: false, refreshSeconds: 15, gatewayGraceSeconds: 60, logLimitMB: 4, tracesRetentionDays: 7, sessionsRetentionDays: 0};
       fillSettings(defaults);
       $('settingsHint').textContent = '已填入默认值，点击「保存」后生效';
     });

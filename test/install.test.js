@@ -50,7 +50,7 @@ test('package and native engine have the same pinned version and digest',()=>{
  assert.equal(verifyPackage(source).version,version);
  const integrity=JSON.parse(fs.readFileSync(path.join(source,'integrity.json'),'utf8'));
  assert.equal(integrity.version,version);
- assert.equal(integrity.engineVersion,'0.2.15');
+ assert.equal(integrity.engineVersion,'0.2.16');
 });
 test('certificate trust uses SSL policy and argument arrays, and refuses failed authorization',{skip:!IS_DARWIN},t=>{
  const p=fakePaths(t),calls=[];let trusted=false;

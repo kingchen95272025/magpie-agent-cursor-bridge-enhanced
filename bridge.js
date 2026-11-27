@@ -193,8 +193,8 @@ if(command==='status') {
     }),
     onPrune:result=>atomic(file('retention.json'),JSON.stringify(result,null,2)),
     reconcileOrca:({takeover})=>applyOrcaTakeover(takeover),
-    spawnEngine:({mode,subagentMode,preferredProxyPort:port})=>spawn(platform.enginePathFor(packageDir),[file('effective.json')],{
-      env:{...process.env,CURSOR_BYOK_DATA_DIR:file('data'),CURSOR_BRIDGE_RUN_MODE:mode,CURSOR_BRIDGE_SUBAGENT_MODE:subagentMode,...(port?{CURSOR_BRIDGE_PROXY_PORT:port}:{})},stdio:['pipe','pipe','pipe'],windowsHide:true
+    spawnEngine:({mode,subagentMode,showOfficialModels,preferredProxyPort:port})=>spawn(platform.enginePathFor(packageDir),[file('effective.json')],{
+      env:{...process.env,CURSOR_BYOK_DATA_DIR:file('data'),CURSOR_BRIDGE_RUN_MODE:mode,CURSOR_BRIDGE_SUBAGENT_MODE:subagentMode,CURSOR_BRIDGE_OFFICIAL_MODELS:showOfficialModels?'1':'0',...(port?{CURSOR_BRIDGE_PROXY_PORT:port}:{})},stdio:['pipe','pipe','pipe'],windowsHide:true
     }),
     // Native diagnostics can contain request information; keep them in a private local file.
     onEngineStderr:appendEngineLog,
