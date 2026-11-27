@@ -286,7 +286,22 @@
     const engineModeText = MODES[engineMode || configuredMode] || configuredMode;
     // null means no engine is running yet; the flag is only known once it starts.
     const engineOfficialModels = runtime?.engineOfficialModels ?? null;
-    const officialModelsText = engineOfficialModels === null ? '—' : (engineOfficialModels ? '官方 + Magpie' : '仅 Magpie');
+    // The catalogue mode is applied by restarting the engine, so show the
+    // pending state while the saved value and the running engine disagree.
+    const configuredOfficialModels = overview.settings?.values?.showOfficialModels;
+    const officialSwitching = engineOfficialModels !== null
+      && typeof configuredOfficialModels === 'boolean'
+      && engineOfficialModels !== configuredOfficialModels;
+    const officialModelsText = engineOfficialModels === null
+      ? '—'
+      : `${engineOfficialModels ? '官方 + Magpie' : '仅 Magpie'}${officialSwitching ? ' · 切换中' : ''}`;
+    // A background process started by an older plugin build ignores settings
+    // fields it does not know about. Make that visible instead of letting a
+    // save look applied when the running supervisor cannot see it.
+    const installedVersion = overview.version || overview.installation?.version || null;
+    const runtimeVersion = runtime?.version || null;
+    const versionMismatch = !!(installedVersion && runtimeVersion && runtimeVersion !== installedVersion);
+    const versionText = installedVersion || '—';
     const databaseText = engineMode === 'lite'
       ? '内存 · 不落盘'
       : (overview.database ? `${bytes(overview.database.size)} · bridge.db` : '未创建');
@@ -303,10 +318,14 @@
 
     const grid = $('overview');
     grid.replaceChildren(
-      item('版本', overview.version || overview.installation?.version || '—', {mono: true}),
+      item('版本', versionMismatch ? `${versionText} · 后台 ${runtimeVersion}` : versionText, {
+        mono: true,
+        tone: versionMismatch ? 'warn' : '',
+        title: versionMismatch ? '后台进程仍在运行旧版本：重启后台后，新参数才会生效' : ''
+      }),
       item('Cursor', cursorText, {tone: cursor?.version && !cursor.tested ? 'warn' : '', title: cursor?.hint || ''}),
       item('运行模式', `${engineModeText}${switching ? ' · 切换中' : ''}`, {tone: switching ? 'warn' : ''}),
-      item('模型目录', officialModelsText, {tone: engineOfficialModels ? 'ok' : ''}),
+      item('模型目录', officialModelsText, {tone: officialSwitching ? 'warn' : (engineOfficialModels ? 'ok' : '')}),
       item('数据库', databaseText, {tone: engineMode === 'lite' ? 'ok' : ''}),
       item('自动清理', retentionText, {tone: retention?.error ? 'warn' : ''}),
       item('后台监视器', overview.supervisor.alive
@@ -574,19 +593,41 @@
     const beforeOfficialModels = lastOverview?.settings?.values?.showOfficialModels;
     const beforeTraces = lastOverview?.settings?.values?.tracesRetentionDays;
     const beforeSessions = lastOverview?.settings?.values?.sessionsRetentionDays;
-    const body = {
-      runMode: $('runMode').value,
-      subagentMode: $('subagentMode').value,
-      orcaTakeover: $('orcaTakeover').value,
-      showOfficialModels: $('showOfficialModels').value === 'on',
-      refreshSeconds: Number($('refreshSeconds').value),
-      gatewayGraceSeconds: Number($('gatewayGraceSeconds').value),
-      logLimitMB: Number($('logLimitMB').value),
-      tracesRetentionDays: Number($('tracesRetentionDays').value),
-      sessionsRetentionDays: Number($('sessionsRetentionDays').value)
-    };
+    // The first /api/status response fills this form, and on Windows the
+    // status probe (PowerShell process/registry checks) can take a moment.
+    // Saving before it lands must not turn the still-empty inputs into 0 or
+    // '' — the server reads those as "invalid" or "reset to default". Post
+    // only the fields that actually carry a value; the rest keep the value
+    // already stored in bridge-settings.json.
+    const body = {};
+    for (const key of ['runMode', 'subagentMode', 'orcaTakeover']) {
+      if ($(key).value) body[key] = $(key).value;
+    }
+    if ($('showOfficialModels').value === 'on' || $('showOfficialModels').value === 'off') {
+      body.showOfficialModels = $('showOfficialModels').value === 'on';
+    }
+    for (const key of ['refreshSeconds', 'gatewayGraceSeconds', 'logLimitMB', 'tracesRetentionDays', 'sessionsRetentionDays']) {
+      const raw = $(key).value.trim();
+      if (raw !== '') body[key] = Number(raw);
+    }
+    if (!Object.keys(body).length) {
+      $('settingsHint').textContent = '参数尚未加载完成，请稍候再保存';
+      loadStatus({quiet: true});
+      return;
+    }
     try {
       const result = await api('/api/settings', {method: 'POST', body});
+      // An old control service (still in memory from before the plugin update)
+      // re-serialises only the settings keys it knows and silently drops new
+      // ones. Never report "saved" when the response does not echo the value:
+      // the supervisor would never see it.
+      const dropped = Object.keys(body).filter((key) => result.settings?.[key] !== body[key]);
+      if (dropped.length) {
+        $('settingsHint').textContent = `保存未生效（${dropped.join('、')}）：控制台服务可能仍在运行旧版本，请完全退出并重启 Magpie 后重试`;
+        notice('控制台服务没有保存新参数：请重启 Magpie 以重新加载插件。', 'error');
+        loadStatus({quiet: true});
+        return;
+      }
       // Mirror the saved values immediately: the summary and the overview are
       // painted from lastOverview, which the next poll may still fill from a
       // snapshot taken just before the write.
@@ -602,8 +643,14 @@
         : '';
       const officialModelsHint = beforeOfficialModels !== undefined && beforeOfficialModels !== result.settings.showOfficialModels
         ? (result.settings.showOfficialModels
-          ? '已开启 Cursor 官方模型，引擎重启后模型列表将合并官方目录，Auto 也会恢复；'
-          : '已关闭 Cursor 官方模型，引擎重启后模型列表只保留 Magpie 模型；')
+          ? '已开启 Cursor 官方模型：引擎将在数秒内自动重启并合并官方目录（正在生成的回复可能中断一次）；若模型菜单没有变化，请重新打开模型选择器，仍不生效时重启一次 Cursor；'
+          : '已关闭 Cursor 官方模型：引擎将在数秒内自动重启，模型列表只保留 Magpie 模型（正在生成的回复可能中断一次）；')
+        : '';
+      // A background process started by the previous plugin build ignores new
+      // settings fields no matter what this (already updated) service writes.
+      const staleRuntime = lastOverview?.runtime?.version && lastOverview?.version
+        && lastOverview.runtime.version !== lastOverview.version
+        ? `后台仍在运行 v${lastOverview.runtime.version}（已安装 v${lastOverview.version}），请点「重启」后新参数才会生效；`
         : '';
       const retentionHint = beforeTraces !== result.settings.tracesRetentionDays || beforeSessions !== result.settings.sessionsRetentionDays
         ? '保留策略已更新，下一轮后台清理生效；'
@@ -621,7 +668,7 @@
                 : (result.orca?.changed
                   ? `Orca 配置已${result.settings.orcaTakeover === 'on' ? '写入' : '移除'}；`
                   : '')))));
-      $('settingsHint').textContent = `已保存：${modeHint}${subagentHint}${officialModelsHint}${retentionHint}${orcaHint}同步间隔与容错下一轮生效，日志上限下次后台启动生效`;
+      $('settingsHint').textContent = `已保存：${staleRuntime}${modeHint}${subagentHint}${officialModelsHint}${retentionHint}${orcaHint}同步间隔与容错下一轮生效，日志上限下次后台启动生效`;
       loadStatus({quiet: true});
       loadAgentCli({force: true});
     } catch (error) {
@@ -2255,7 +2302,17 @@
       $('dbConfirmHint').textContent = '';
       updateDbControls();
     });
+    // Magpie opens plugin pages in a sandbox="allow-scripts" frame. Without
+    // allow-forms the browser suppresses form submission entirely — the submit
+    // event never fires, so a type="submit" button silently did nothing. Use a
+    // click handler for the button and keep Enter working by intercepting it.
+    $('saveSettings').addEventListener('click', saveSettings);
     $('settingsForm').addEventListener('submit', saveSettings);
+    $('settingsForm').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.target?.tagName === 'TEXTAREA') return;
+      event.preventDefault();
+      saveSettings(event);
+    });
     $('settingsCard').addEventListener('toggle', renderSettingsState);
     initSettingTips();
     $('saveModelNames').addEventListener('click', saveModelNames);

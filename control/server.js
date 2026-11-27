@@ -322,6 +322,10 @@ async function overview(repoRoot, port) {
     } : null,
     runtime: runtime ? {
       state: runtime.state || null,
+      // version is the build the supervisor process was started from. After a
+      // plugin upgrade the old process keeps running until the service is
+      // restarted, and it ignores settings fields it does not know yet.
+      version: typeof runtime.version === 'string' ? runtime.version : null,
       model: runtime.model || null,
       models: Number(runtime.models) || 0,
       mode: runtime.mode || null,

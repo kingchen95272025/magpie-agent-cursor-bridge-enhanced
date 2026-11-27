@@ -16,7 +16,10 @@ const runtimeName=platformModule.runtimeNameFor();
 const IS_WIN=platformModule.IS_WIN;
 const IS_DARWIN=platformModule.IS_DARWIN;
 const IS_LINUX=platformModule.IS_LINUX;
-const temp=t=>{const p=fs.mkdtempSync(path.join(os.tmpdir(),'bridge-install-test-'));t.after(()=>fs.rmSync(p,{recursive:true,force:true}));return p;};
+// Windows keeps a just-executed engine image (verifyPackage runs it) or an
+// antivirus scan locked for a moment; without retries the cleanup fails with
+// EPERM even though the test itself passed.
+const temp=t=>{const p=fs.mkdtempSync(path.join(os.tmpdir(),'bridge-install-test-'));t.after(()=>fs.rmSync(p,{recursive:true,force:true,maxRetries:10,retryDelay:100}));return p;};
 // pathsFor() resolves the Windows layout from %APPDATA%/%LOCALAPPDATA%, not
 // from the home argument, so tests must point those at the temporary home or
 // they write into the real installation.

@@ -73,6 +73,20 @@ test('connection lookup skips missing and malformed candidates', (t) => {
   assert.equal(readConnection([missing, broken]), null);
 });
 
+// Magpie opens plugin pages in a sandbox="allow-scripts" frame. Without
+// allow-forms the browser skips form submission entirely — the submit event
+// never fires — so a type="submit" button silently does nothing inside the
+// real console even though the same page works in a normal browser tab.
+test('console save button does not depend on form submission', () => {
+  const html = fs.readFileSync(path.join(repoRoot, 'control/ui.html'), 'utf8');
+  const button = html.match(/<button[^>]*id="saveSettings"[^>]*>/)?.[0] || '';
+  assert.match(button, /type="button"/);
+  assert.doesNotMatch(html, /type="submit"/);
+  const ui = fs.readFileSync(path.join(repoRoot, 'control/ui.js'), 'utf8');
+  assert.match(ui, /\$\('saveSettings'\)\.addEventListener\('click', saveSettings\)/);
+  assert.match(ui, /\$\('settingsForm'\)\.addEventListener\('submit', saveSettings\)/);
+});
+
 test('control console serves a tokenised page and guards /api', async (t) => {
   const home = fakeHome(t);
   const previous = process.env.CURSOR_BRIDGE_HOME;

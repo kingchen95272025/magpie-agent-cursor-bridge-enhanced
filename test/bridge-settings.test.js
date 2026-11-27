@@ -72,6 +72,50 @@ test('writes validate strictly, round-trip and keep the file private', (t) => {
   assert.deepEqual(normalize({}), defaults);
 });
 
+test('a transient Windows rename violation retries instead of losing the save', {skip: process.platform !== 'win32'}, (t) => {
+  const root = setup(t);
+  const original = fs.renameSync;
+  let attempts = 0;
+  fs.renameSync = (...args) => {
+    attempts += 1;
+    if (attempts <= 2) {
+      const error = new Error('EPERM: operation not permitted, rename');
+      error.code = 'EPERM';
+      throw error;
+    }
+    return original(...args);
+  };
+  try {
+    assert.equal(write(root, {showOfficialModels: true}).showOfficialModels, true);
+  } finally {
+    fs.renameSync = original;
+  }
+  assert.equal(attempts, 3, 'the save is retried while the target is briefly locked');
+  assert.equal(read(root).showOfficialModels, true);
+  assert.equal(fs.existsSync(`${settingsFile(root)}.${process.pid}.tmp`), false, 'no temp file is left behind');
+});
+
+test('a transient Windows read failure reuses the last good settings', {skip: process.platform !== 'win32'}, (t) => {
+  const root = setup(t);
+  write(root, {showOfficialModels: true});
+  const original = fs.readFileSync;
+  fs.readFileSync = (file, ...rest) => {
+    if (String(file) === settingsFile(root)) {
+      const error = new Error('EBUSY: resource busy or locked');
+      error.code = 'EBUSY';
+      throw error;
+    }
+    return original(file, ...rest);
+  };
+  try {
+    // Falling back to defaults here would make the supervisor restart the
+    // engine with the wrong catalogue mode on a transient lock.
+    assert.equal(read(root).showOfficialModels, true);
+  } finally {
+    fs.readFileSync = original;
+  }
+});
+
 test('retention days accept zero to disable and reject negatives strictly', (t) => {
   const root = setup(t);
   const saved = write(root, {tracesRetentionDays: 0, sessionsRetentionDays: 30});
